@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ramms-access"
+version = "0.1.0"
+description = "Alternative-access input hub for RAMMS: device adapters (BCI, HID/pointer, AT switches) publishing a normalized intent stream to the simulator or robot"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+galea = ["brainflow>=5.10"]
+keyboard = ["pynput>=1.7"]
+pointer = ["pynput>=1.7"]
+all = ["brainflow>=5.10", "pynput>=1.7"]
+
+[project.scripts]
+ramms-access = "ramms_access.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

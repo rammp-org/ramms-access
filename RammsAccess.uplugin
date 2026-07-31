@@ -1,0 +1,25 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RAMMS Access",
+	"Description": "Alternative-access input for RAMMS: normalized intent stream from external devices (BCI, HID/pointer, assistive switches) mapped onto the drive/arm/gripper controllers.",
+	"Category": "RAMMS",
+	"CreatedBy": "RAMMP",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "RammsAccess",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "RammsCore",
+			"Enabled": true
+		}
+	]
+}
