@@ -175,6 +175,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UObject> ControlSink;
 
+	/** Domains the sink is currently driven in (released once when a newer packet omits them). */
+	bool bSinkDriveActive = false;
+	bool bSinkEEActive = false;
+
 	UPROPERTY(Transient)
 	TObjectPtr<URammsDifferentialDriveController> DriveController;
 	UPROPERTY(Transient)

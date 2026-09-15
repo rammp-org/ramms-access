@@ -287,28 +287,44 @@ void URammsAccessInputComponent::HandleEvent(const FString& Event)
 	}
 	else if (Event == TEXT("gripper_open"))
 	{
-		if (!SinkTrigger(GripperOpenId) && GripperController != nullptr)
+		if (SinkAvailable())
+		{
+			SinkTrigger(GripperOpenId); // a refusal is the surface's decision (unknown / arbitration), not a reason to bypass it
+		}
+		else if (GripperController != nullptr)
 		{
 			GripperController->Open();
 		}
 	}
 	else if (Event == TEXT("gripper_close"))
 	{
-		if (!SinkTrigger(GripperCloseId) && GripperController != nullptr)
+		if (SinkAvailable())
+		{
+			SinkTrigger(GripperCloseId); // a refusal is the surface's decision (unknown / arbitration), not a reason to bypass it
+		}
+		else if (GripperController != nullptr)
 		{
 			GripperController->Close();
 		}
 	}
 	else if (Event == TEXT("gripper_toggle"))
 	{
-		if (!SinkTrigger(GripperToggleId) && GripperController != nullptr)
+		if (SinkAvailable())
+		{
+			SinkTrigger(GripperToggleId); // a refusal is the surface's decision (unknown / arbitration), not a reason to bypass it
+		}
+		else if (GripperController != nullptr)
 		{
 			GripperController->Toggle();
 		}
 	}
 	else if (Event == TEXT("sync_target"))
 	{
-		if (!SinkTrigger(ArmResyncId) && KinovaController != nullptr)
+		if (SinkAvailable())
+		{
+			SinkTrigger(ArmResyncId);
+		}
+		else if (KinovaController != nullptr)
 		{
 			KinovaController->SnapEndEffectorTargetToCurrentPose();
 		}
@@ -329,6 +345,8 @@ void URammsAccessInputComponent::ZeroControl()
 		{
 			SinkRelease(Id);
 		}
+		bSinkDriveActive = false;
+		bSinkEEActive = false;
 		bHaveIntent = false;
 		return;
 	}
@@ -352,10 +370,20 @@ void URammsAccessInputComponent::ApplyIntent(const FRammsAccessIntent& Intent, f
 	{
 		// Autonomy outranks local input in the surface's arbitration; the arm
 		// contributor integrates the rate axes at its own teleop speeds.
+		// Packets are latest-wins per domain: when the newest packet omits a
+		// domain an earlier one drove, release that domain once (not every
+		// tick, which would fight whoever drives it next).
 		if (Intent.bHasDrive)
 		{
 			SinkSet(DriveForwardId, static_cast<float>(Intent.Drive.Y) * Scale);
 			SinkSet(DriveTurnId, static_cast<float>(Intent.Drive.X) * Scale);
+			bSinkDriveActive = true;
+		}
+		else if (bSinkDriveActive)
+		{
+			SinkRelease(DriveForwardId);
+			SinkRelease(DriveTurnId);
+			bSinkDriveActive = false;
 		}
 		if (Intent.bHasEE)
 		{
@@ -365,6 +393,15 @@ void URammsAccessInputComponent::ApplyIntent(const FRammsAccessIntent& Intent, f
 			SinkSet(ArmPitchId, static_cast<float>(Intent.EEAngular.Pitch) * Scale);
 			SinkSet(ArmYawId, static_cast<float>(Intent.EEAngular.Yaw) * Scale);
 			SinkSet(ArmRollId, static_cast<float>(Intent.EEAngular.Roll) * Scale);
+			bSinkEEActive = true;
+		}
+		else if (bSinkEEActive)
+		{
+			for (const FName& Id : { ArmForwardId, ArmStrafeId, ArmUpId, ArmPitchId, ArmYawId, ArmRollId })
+			{
+				SinkRelease(Id);
+			}
+			bSinkEEActive = false;
 		}
 		return;
 	}
