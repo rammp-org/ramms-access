@@ -339,14 +339,25 @@ void URammsAccessInputComponent::ZeroControl()
 {
 	if (SinkAvailable())
 	{
-		// Let go of everything: the drive springs back, the arm holds its
-		// target, and the Autonomy hold lapses so local input resumes.
-		for (const FName& Id : { DriveForwardId, DriveTurnId, ArmForwardId, ArmStrafeId, ArmUpId, ArmPitchId, ArmYawId, ArmRollId })
+		// Let go of what this component drove — and only that: Autonomy
+		// outranks local sources in the sink, so releasing an axis it never
+		// touched would cancel another controller's input. The drive springs
+		// back, the arm holds its target, and the hold lapses so local input
+		// resumes.
+		if (bSinkDriveActive)
 		{
-			SinkRelease(Id);
+			SinkRelease(DriveForwardId);
+			SinkRelease(DriveTurnId);
+			bSinkDriveActive = false;
 		}
-		bSinkDriveActive = false;
-		bSinkEEActive = false;
+		if (bSinkEEActive)
+		{
+			for (const FName& Id : { ArmForwardId, ArmStrafeId, ArmUpId, ArmPitchId, ArmYawId, ArmRollId })
+			{
+				SinkRelease(Id);
+			}
+			bSinkEEActive = false;
+		}
 		bHaveIntent = false;
 		return;
 	}
