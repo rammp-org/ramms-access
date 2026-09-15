@@ -20,7 +20,8 @@ public class RammsAccess : ModuleRules
 			"Json",
 			"Sockets",
 			"Networking",
-			"RammsCore", // drive / arm / gripper controllers the intents map onto
+			"RammsCore", // drive / arm / gripper controllers the intents map onto (legacy path)
+			"RammsControl", // IRammsControlSink: the robot's control surface (ramms-ui)
 		});
 	}
 }

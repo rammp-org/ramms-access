@@ -8,6 +8,7 @@
 #include "GripperControllerComponent.h"
 #include "KinovaGen3ControllerComponent.h"
 #include "RammsDifferentialDriveController.h"
+#include "RammsControlSink.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Sockets.h"
@@ -117,8 +118,67 @@ void URammsAccessInputComponent::ResolveTargets()
 		}
 	}
 
-	UE_LOG(LogRammsAccess, Log, TEXT("[%s] targets: drive=%s arm=%s gripper=%s"), *GetPathName(),
-		*GetNameSafe(DriveController), *GetNameSafe(KinovaController), *GetNameSafe(GripperController));
+	ControlSink = nullptr;
+	if (bUseControlSurface)
+	{
+		TArray<UActorComponent*> All;
+		Owner->GetComponents(All);
+		for (UActorComponent* C : All)
+		{
+			if (C && C->GetClass()->ImplementsInterface(URammsControlSink::StaticClass()))
+			{
+				ControlSink = C;
+				break;
+			}
+		}
+	}
+
+	UE_LOG(LogRammsAccess, Log, TEXT("[%s] targets: surface=%s drive=%s arm=%s gripper=%s"), *GetPathName(),
+		*GetNameSafe(ControlSink), *GetNameSafe(DriveController), *GetNameSafe(KinovaController), *GetNameSafe(GripperController));
+}
+
+// --- control-surface path -------------------------------------------------------
+
+namespace
+{
+	const FName DriveForwardId(TEXT("drive.forward"));
+	const FName DriveTurnId(TEXT("drive.turn"));
+	const FName ArmForwardId(TEXT("arm.forward"));
+	const FName ArmStrafeId(TEXT("arm.strafe"));
+	const FName ArmUpId(TEXT("arm.up"));
+	const FName ArmPitchId(TEXT("arm.pitch"));
+	const FName ArmYawId(TEXT("arm.yaw"));
+	const FName ArmRollId(TEXT("arm.roll"));
+	const FName ArmResyncId(TEXT("arm.resync"));
+	const FName GripperOpenId(TEXT("gripper.open"));
+	const FName GripperCloseId(TEXT("gripper.close"));
+	const FName GripperToggleId(TEXT("gripper.toggle"));
+} // namespace
+
+bool URammsAccessInputComponent::SinkAvailable() const
+{
+	return ControlSink != nullptr;
+}
+
+void URammsAccessInputComponent::SinkSet(FName Id, float Value)
+{
+	if (ControlSink)
+	{
+		IRammsControlSink::Execute_SetAxis(ControlSink, Id, Value, ERammsControlSource::Autonomy);
+	}
+}
+
+void URammsAccessInputComponent::SinkRelease(FName Id)
+{
+	if (ControlSink)
+	{
+		IRammsControlSink::Execute_ReleaseAxis(ControlSink, Id, ERammsControlSource::Autonomy);
+	}
+}
+
+bool URammsAccessInputComponent::SinkTrigger(FName Id)
+{
+	return ControlSink && IRammsControlSink::Execute_TriggerAction(ControlSink, Id, ERammsControlSource::Autonomy);
 }
 
 bool URammsAccessInputComponent::ParseIntent(const FString& Json, FRammsAccessIntent& Out, TArray<FString>& OutEvents) const
@@ -225,21 +285,33 @@ void URammsAccessInputComponent::HandleEvent(const FString& Event)
 	{
 		ZeroControl();
 	}
-	else if (Event == TEXT("gripper_open") && GripperController != nullptr)
+	else if (Event == TEXT("gripper_open"))
 	{
-		GripperController->Open();
+		if (!SinkTrigger(GripperOpenId) && GripperController != nullptr)
+		{
+			GripperController->Open();
+		}
 	}
-	else if (Event == TEXT("gripper_close") && GripperController != nullptr)
+	else if (Event == TEXT("gripper_close"))
 	{
-		GripperController->Close();
+		if (!SinkTrigger(GripperCloseId) && GripperController != nullptr)
+		{
+			GripperController->Close();
+		}
 	}
-	else if (Event == TEXT("gripper_toggle") && GripperController != nullptr)
+	else if (Event == TEXT("gripper_toggle"))
 	{
-		GripperController->Toggle();
+		if (!SinkTrigger(GripperToggleId) && GripperController != nullptr)
+		{
+			GripperController->Toggle();
+		}
 	}
-	else if (Event == TEXT("sync_target") && KinovaController != nullptr)
+	else if (Event == TEXT("sync_target"))
 	{
-		KinovaController->SnapEndEffectorTargetToCurrentPose();
+		if (!SinkTrigger(ArmResyncId) && KinovaController != nullptr)
+		{
+			KinovaController->SnapEndEffectorTargetToCurrentPose();
+		}
 	}
 	else
 	{
@@ -249,6 +321,17 @@ void URammsAccessInputComponent::HandleEvent(const FString& Event)
 
 void URammsAccessInputComponent::ZeroControl()
 {
+	if (SinkAvailable())
+	{
+		// Let go of everything: the drive springs back, the arm holds its
+		// target, and the Autonomy hold lapses so local input resumes.
+		for (const FName& Id : { DriveForwardId, DriveTurnId, ArmForwardId, ArmStrafeId, ArmUpId, ArmPitchId, ArmYawId, ArmRollId })
+		{
+			SinkRelease(Id);
+		}
+		bHaveIntent = false;
+		return;
+	}
 	if (DriveController != nullptr)
 	{
 		// External path: zeroes the drive AND briefly extends external priority,
@@ -264,6 +347,27 @@ void URammsAccessInputComponent::ZeroControl()
 void URammsAccessInputComponent::ApplyIntent(const FRammsAccessIntent& Intent, float DeltaTime)
 {
 	const float Scale = bScaleByConfidence ? Intent.Confidence : 1.0f;
+
+	if (SinkAvailable())
+	{
+		// Autonomy outranks local input in the surface's arbitration; the arm
+		// contributor integrates the rate axes at its own teleop speeds.
+		if (Intent.bHasDrive)
+		{
+			SinkSet(DriveForwardId, static_cast<float>(Intent.Drive.Y) * Scale);
+			SinkSet(DriveTurnId, static_cast<float>(Intent.Drive.X) * Scale);
+		}
+		if (Intent.bHasEE)
+		{
+			SinkSet(ArmForwardId, static_cast<float>(Intent.EELinear.X) * Scale);
+			SinkSet(ArmStrafeId, static_cast<float>(Intent.EELinear.Y) * Scale);
+			SinkSet(ArmUpId, static_cast<float>(Intent.EELinear.Z) * Scale);
+			SinkSet(ArmPitchId, static_cast<float>(Intent.EEAngular.Pitch) * Scale);
+			SinkSet(ArmYawId, static_cast<float>(Intent.EEAngular.Yaw) * Scale);
+			SinkSet(ArmRollId, static_cast<float>(Intent.EEAngular.Roll) * Scale);
+		}
+		return;
+	}
 
 	if (Intent.bHasDrive && DriveController != nullptr)
 	{
