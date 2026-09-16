@@ -55,13 +55,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAccessEStop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAccessWatchdogTimeout);
 
 /**
- * Consumes the ramms-access intent stream (UDP JSON, latest-wins) and maps it
- * onto the robot's existing controllers: drive intents ->
- * URammsDifferentialDriveController::SetDriveInput, end-effector intents ->
- * UKinovaGen3ControllerComponent::ApplyEndEffectorTeleopInput, gripper /
- * mode events -> gripper controller. Add to the robot pawn next to those
- * components; the external "ramms-access" hub (python/) does device handling
- * and decoding and publishes intents.
+ * Consumes the ramms-access intent stream (UDP JSON, latest-wins) and drives
+ * the robot through its control surface (IRammsControlSink, the sibling
+ * URammsRobotControlSurfaceComponent) with Source = Autonomy: drive intents
+ * -> drive.forward / drive.turn, end-effector intents -> arm.forward /
+ * strafe / up / pitch / yaw / roll rate axes, gripper and sync events ->
+ * gripper.* / arm.resync actions. Autonomy outranks local input in the
+ * surface's arbitration for the surface's hold window, the way the old
+ * external-drive path did. Add to the robot pawn; the external
+ * "ramms-access" hub (python/) does device handling and decoding and
+ * publishes intents.
+ *
+ * Without a control surface on the pawn (bUseControlSurface off, or none
+ * present) it falls back to the legacy direct path: SetExternalDriveInput,
+ * ApplyEndEffectorTeleopInput and the gripper controller by name.
  *
  * Safety: a watchdog zeroes drive and EE rates if no valid packet arrives
  * within WatchdogTimeoutMs (the arm holds pose; the base stops). An "estop"
@@ -107,7 +114,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
 	bool bScaleByConfidence = true;
 
-	/** Optional component name overrides when the owner has multiples. */
+	/** Route through the pawn's control surface (IRammsControlSink) when one is
+	 *  present. EE rates then move at the arm teleop component's speeds, not
+	 *  EELinearSpeedCmPerSecond / EEAngularSpeedDegPerSecond. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
+	bool bUseControlSurface = true;
+
+	/** Optional component name overrides when the owner has multiples (legacy path). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
 	FName DriveControllerName = NAME_None;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
@@ -150,7 +163,21 @@ private:
 	void HandleEvent(const FString& Event);
 	void ZeroControl();
 
+	// Control-surface path (IRammsControlSink on the owner).
+	bool SinkAvailable() const;
+	void SinkSet(FName Id, float Value);
+	void SinkRelease(FName Id);
+	bool SinkTrigger(FName Id);
+
 	FSocket* Socket = nullptr;
+
+	/** The owner's control surface (implements IRammsControlSink); null = legacy path. */
+	UPROPERTY(Transient)
+	TObjectPtr<UObject> ControlSink;
+
+	/** Domains the sink is currently driven in (released once when a newer packet omits them). */
+	bool bSinkDriveActive = false;
+	bool bSinkEEActive = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URammsDifferentialDriveController> DriveController;
