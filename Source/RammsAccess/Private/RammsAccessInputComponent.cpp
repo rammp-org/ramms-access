@@ -7,7 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "GripperControllerComponent.h"
 #include "KinovaGen3ControllerComponent.h"
-#include "RammsDifferentialDriveController.h"
+#include "RammsControlIds.h"
 #include "RammsControlSink.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -85,17 +85,6 @@ void URammsAccessInputComponent::ResolveTargets()
 		return;
 	}
 
-	TArray<URammsDifferentialDriveController*> Drives;
-	Owner->GetComponents(Drives);
-	for (URammsDifferentialDriveController* C : Drives)
-	{
-		if (DriveControllerName == NAME_None || C->GetFName() == DriveControllerName)
-		{
-			DriveController = C;
-			break;
-		}
-	}
-
 	TArray<UKinovaGen3ControllerComponent*> Arms;
 	Owner->GetComponents(Arms);
 	for (UKinovaGen3ControllerComponent* C : Arms)
@@ -133,16 +122,14 @@ void URammsAccessInputComponent::ResolveTargets()
 		}
 	}
 
-	UE_LOG(LogRammsAccess, Log, TEXT("[%s] targets: surface=%s drive=%s arm=%s gripper=%s"), *GetPathName(),
-		*GetNameSafe(ControlSink), *GetNameSafe(DriveController), *GetNameSafe(KinovaController), *GetNameSafe(GripperController));
+	UE_LOG(LogRammsAccess, Log, TEXT("[%s] targets: surface=%s arm=%s gripper=%s"), *GetPathName(),
+		*GetNameSafe(ControlSink), *GetNameSafe(KinovaController), *GetNameSafe(GripperController));
 }
 
 // --- control-surface path -------------------------------------------------------
 
 namespace
 {
-	const FName DriveForwardId(TEXT("drive.forward"));
-	const FName DriveTurnId(TEXT("drive.turn"));
 	const FName ArmForwardId(TEXT("arm.forward"));
 	const FName ArmStrafeId(TEXT("arm.strafe"));
 	const FName ArmUpId(TEXT("arm.up"));
@@ -183,7 +170,7 @@ bool URammsAccessInputComponent::SinkTrigger(FName Id)
 
 bool URammsAccessInputComponent::ParseIntent(const FString& Json, FRammsAccessIntent& Out, TArray<FString>& OutEvents) const
 {
-	TSharedPtr<FJsonObject> Root;
+	TSharedPtr<FJsonObject>			Root;
 	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
 	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
 	{
@@ -346,8 +333,8 @@ void URammsAccessInputComponent::ZeroControl()
 		// resumes.
 		if (bSinkDriveActive)
 		{
-			SinkRelease(DriveForwardId);
-			SinkRelease(DriveTurnId);
+			SinkRelease(RammsControlIds::Drive::Forward());
+			SinkRelease(RammsControlIds::Drive::Turn());
 			bSinkDriveActive = false;
 		}
 		if (bSinkEEActive)
@@ -360,13 +347,6 @@ void URammsAccessInputComponent::ZeroControl()
 		}
 		bHaveIntent = false;
 		return;
-	}
-	if (DriveController != nullptr)
-	{
-		// External path: zeroes the drive AND briefly extends external priority,
-		// so the stop lands even though the pawn's per-tick input writes continue;
-		// the hold then expires and the player joystick resumes automatically.
-		DriveController->SetExternalDriveInput(FVector2D::ZeroVector);
 	}
 	// The arm needs no explicit zero: EE motion only happens while we actively
 	// feed teleop input; withholding input holds the current target pose.
@@ -386,14 +366,14 @@ void URammsAccessInputComponent::ApplyIntent(const FRammsAccessIntent& Intent, f
 		// tick, which would fight whoever drives it next).
 		if (Intent.bHasDrive)
 		{
-			SinkSet(DriveForwardId, static_cast<float>(Intent.Drive.Y) * Scale);
-			SinkSet(DriveTurnId, static_cast<float>(Intent.Drive.X) * Scale);
+			SinkSet(RammsControlIds::Drive::Forward(), static_cast<float>(Intent.Drive.Y) * Scale);
+			SinkSet(RammsControlIds::Drive::Turn(), static_cast<float>(Intent.Drive.X) * Scale);
 			bSinkDriveActive = true;
 		}
 		else if (bSinkDriveActive)
 		{
-			SinkRelease(DriveForwardId);
-			SinkRelease(DriveTurnId);
+			SinkRelease(RammsControlIds::Drive::Forward());
+			SinkRelease(RammsControlIds::Drive::Turn());
 			bSinkDriveActive = false;
 		}
 		if (Intent.bHasEE)
@@ -417,12 +397,6 @@ void URammsAccessInputComponent::ApplyIntent(const FRammsAccessIntent& Intent, f
 		return;
 	}
 
-	if (Intent.bHasDrive && DriveController != nullptr)
-	{
-		// External path wins arbitration against the pawn's per-tick joystick
-		// writes (see URammsDifferentialDriveController::SetExternalDriveInput).
-		DriveController->SetExternalDriveInput(Intent.Drive * Scale);
-	}
 	if (Intent.bHasEE && KinovaController != nullptr && (!Intent.EELinear.IsNearlyZero() || !Intent.EEAngular.IsNearlyZero()))
 	{
 		KinovaController->ApplyEndEffectorTeleopInput(
@@ -443,8 +417,8 @@ void URammsAccessInputComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	{
 		// Drain every pending datagram; continuous fields are latest-wins,
 		// discrete events are processed in arrival order.
-		uint8	 Buffer[8192];
-		int32	 BytesRead = 0;
+		uint8					  Buffer[8192];
+		int32					  BytesRead = 0;
 		TSharedRef<FInternetAddr> Sender = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
 		while (Socket->RecvFrom(Buffer, sizeof(Buffer) - 1, BytesRead, *Sender))
 		{
