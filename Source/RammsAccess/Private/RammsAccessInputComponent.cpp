@@ -122,6 +122,14 @@ void URammsAccessInputComponent::ResolveTargets()
 		}
 	}
 
+	if (bUseControlSurface && !ControlSink)
+	{
+		// Allowed, but worth saying: drive intents are delivered only through
+		// the control surface now, so without one this device moves nothing.
+		UE_LOG(LogRammsAccess, Warning,
+			TEXT("[%s] no control surface on '%s': drive intents will not reach the robot. Add a RammsRobotControlSurfaceComponent to it."),
+			*GetPathName(), *GetNameSafe(GetOwner()));
+	}
 	UE_LOG(LogRammsAccess, Log, TEXT("[%s] targets: surface=%s arm=%s gripper=%s"), *GetPathName(),
 		*GetNameSafe(ControlSink), *GetNameSafe(KinovaController), *GetNameSafe(GripperController));
 }
