@@ -66,8 +66,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAccessWatchdogTimeout);
  * publishes intents.
  *
  * Without a control surface on the pawn (bUseControlSurface off, or none
- * present) it falls back to the legacy direct path: SetExternalDriveInput,
- * ApplyEndEffectorTeleopInput and the gripper controller by name.
+ * present) only the arm and gripper legacy paths remain --
+ * ApplyEndEffectorTeleopInput on the Kinova controller and the gripper
+ * controller by name. There is no longer a legacy drive path: dropping
+ * SetExternalDriveInput was the point of the concrete-drive removal, so on
+ * such a pawn drive intents are decoded, reported through OnIntentReceived,
+ * and not applied. Give the pawn a control surface to make it drivable.
  *
  * Safety: a watchdog zeroes drive and EE rates if no valid packet arrives
  * within WatchdogTimeoutMs (the arm holds pose; the base stops). An "estop"
