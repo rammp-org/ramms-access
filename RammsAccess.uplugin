@@ -22,7 +22,7 @@
 			"Enabled": true
 		},
 		{
-			"Name": "RammsUI",
+			"Name": "RammsControl",
 			"Enabled": true
 		}
 	]

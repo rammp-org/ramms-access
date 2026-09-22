@@ -9,7 +9,6 @@
 class FSocket;
 class UGripperControllerComponent;
 class UKinovaGen3ControllerComponent;
-class URammsDifferentialDriveController;
 
 /** One parsed intent packet (protocol v1 — see doc/PLAN.md). */
 USTRUCT(BlueprintType)
@@ -67,8 +66,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAccessWatchdogTimeout);
  * publishes intents.
  *
  * Without a control surface on the pawn (bUseControlSurface off, or none
- * present) it falls back to the legacy direct path: SetExternalDriveInput,
- * ApplyEndEffectorTeleopInput and the gripper controller by name.
+ * present) only the arm and gripper legacy paths remain --
+ * ApplyEndEffectorTeleopInput on the Kinova controller and the gripper
+ * controller by name. There is no longer a legacy drive path: dropping
+ * SetExternalDriveInput was the point of the concrete-drive removal, so on
+ * such a pawn drive intents are decoded, reported through OnIntentReceived,
+ * and not applied. Give the pawn a control surface to make it drivable.
  *
  * Safety: a watchdog zeroes drive and EE rates if no valid packet arrives
  * within WatchdogTimeoutMs (the arm holds pose; the base stops). An "estop"
@@ -120,9 +123,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
 	bool bUseControlSurface = true;
 
-	/** Optional component name overrides when the owner has multiples (legacy path). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
-	FName DriveControllerName = NAME_None;
+	/** Optional component name overrides when the owner has multiples (legacy
+	 *  arm / gripper path). There is no drive equivalent: drive goes through
+	 *  the control surface, which exposes one set of drive axes per robot. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
 	FName KinovaControllerName = NAME_None;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Access|Mapping")
@@ -180,8 +183,6 @@ private:
 	bool bSinkEEActive = false;
 
 	UPROPERTY(Transient)
-	TObjectPtr<URammsDifferentialDriveController> DriveController;
-	UPROPERTY(Transient)
 	TObjectPtr<UKinovaGen3ControllerComponent> KinovaController;
 	UPROPERTY(Transient)
 	TObjectPtr<UGripperControllerComponent> GripperController;
@@ -193,9 +194,9 @@ private:
 	bool   bWatchdogTripped = false;
 	/** True once the current suppression episode (watchdog/estop) has zeroed
 	 *  control — the zero must happen exactly once per episode, not per frame. */
-	bool   bControlZeroed = false;
+	bool bControlZeroed = false;
 
 	/** Latest continuous intent, re-applied each tick until superseded or timed out. */
 	FRammsAccessIntent LatestIntent;
-	bool bHaveIntent = false;
+	bool			   bHaveIntent = false;
 };
