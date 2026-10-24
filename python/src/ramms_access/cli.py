@@ -28,6 +28,16 @@ def main() -> None:
     p_galea.add_argument("--calibrate", action="store_true",
                          help="record relax/clench thresholds and exit")
 
+    p_g0 = sub.add_parser("galea-p0", help="Galea phase 0: live monitor of every channel; sends nothing")
+    p_g0.add_argument("--ip", default="", help="Galea IP (default: autodiscover)")
+
+    p_g1 = sub.add_parser("galea-p1",
+                          help="Galea phase 1: EMG gestures drive the chair "
+                               "(clench=forward, smirk=turn, relax=stop)")
+    p_g1.add_argument("--ip", default="", help="Galea IP (default: autodiscover)")
+    p_g1.add_argument("--calibrate", action="store_true",
+                      help="record the four gestures, save the gesture model, exit")
+
     args = parser.parse_args()
     publisher = UdpIntentPublisher(args.host, args.port)
 
@@ -40,6 +50,16 @@ def main() -> None:
     elif args.adapter == "galea":
         from ramms_access.adapters.galea import GaleaAdapter
         adapter = GaleaAdapter(publisher, args.rate, args.ip, args.left_ch, args.right_ch)
+        if args.calibrate:
+            adapter.calibrate()
+            return
+    elif args.adapter == "galea-p0":
+        from ramms_access.adapters.galea_phase_0 import monitor
+        monitor(args.ip)
+        return
+    elif args.adapter == "galea-p1":
+        from ramms_access.adapters.galea_phase_1 import GaleaPhase1Adapter
+        adapter = GaleaPhase1Adapter(publisher, args.rate, args.ip)
         if args.calibrate:
             adapter.calibrate()
             return
