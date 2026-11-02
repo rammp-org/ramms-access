@@ -18,7 +18,7 @@ Full design + device feasibility + milestones: [doc/PLAN.md](doc/PLAN.md).
 
 ## Quickstart (vertical slice)
 
-1. Add `URammsAccessInputComponent` to `BP_Mebot_Ramms` (next to the drive /
+1. Add `URammsAccessInputComponent` to `BP_RammpGen1_Ramms` (next to the drive /
    Kinova / gripper controllers). PIE.
 2. `pip install -e Plugins/RammsAccess/python`
 3. `ramms-access demo --pattern circle` — the chair drives in a circle.
