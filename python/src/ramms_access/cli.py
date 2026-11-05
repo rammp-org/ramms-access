@@ -46,6 +46,14 @@ def main() -> None:
     p_g2.add_argument("--calibrate", action="store_true",
                       help="record rest and clench, save the clench model, exit (Galea only)")
 
+    p_g21 = sub.add_parser("galea-p2.1",
+                           help="Galea + Neon + chair heading phase 2.1: clench freezes gaze/head/chair "
+                                "and turns to face the gaze; clench drives; clench stops")
+    p_g21.add_argument("--ip", default="", help="Galea IP (default: autodiscover)")
+    p_g21.add_argument("--neon-ip", default="", help="Neon Companion phone IP (required unless --calibrate)")
+    p_g21.add_argument("--calibrate", action="store_true",
+                       help="record rest and clench (shared with galea-p2.0), save, exit (Galea only)")
+
     sub.add_parser("chair-p0", help="sim chair phase 0: live heading readout via Remote Execution; sends nothing")
 
     p_n0 = sub.add_parser("neon-p0", help="Neon phase 0: live gaze / IMU / eye-event monitor; sends nothing")
@@ -84,6 +92,14 @@ def main() -> None:
             return
         if not args.neon_ip:
             p_g2.error("--neon-ip is required (except with --calibrate)")
+    elif args.adapter == "galea-p2.1":
+        from ramms_access.adapters.galea_phase_2_1 import GaleaPhase21Adapter
+        adapter = GaleaPhase21Adapter(publisher, args.rate, args.ip, args.neon_ip)
+        if args.calibrate:
+            adapter.calibrate()
+            return
+        if not args.neon_ip:
+            p_g21.error("--neon-ip is required (except with --calibrate)")
     elif args.adapter == "chair-p0":
         from ramms_access.adapters.chair_phase_0 import monitor
         monitor()
