@@ -38,6 +38,19 @@ def main() -> None:
     p_g1.add_argument("--calibrate", action="store_true",
                       help="record the four gestures, save the gesture model, exit")
 
+    p_g2 = sub.add_parser("galea-p2.0",
+                          help="Galea + Neon phase 2.0: clench cycles REST -> ROTATE (gaze steers) "
+                               "-> DRIVE (straight ahead)")
+    p_g2.add_argument("--ip", default="", help="Galea IP (default: autodiscover)")
+    p_g2.add_argument("--neon-ip", default="", help="Neon Companion phone IP (required unless --calibrate)")
+    p_g2.add_argument("--calibrate", action="store_true",
+                      help="record rest and clench, save the clench model, exit (Galea only)")
+
+    sub.add_parser("chair-p0", help="sim chair phase 0: live heading readout via Remote Execution; sends nothing")
+
+    p_n0 = sub.add_parser("neon-p0", help="Neon phase 0: live gaze / IMU / eye-event monitor; sends nothing")
+    p_n0.add_argument("--ip", required=True, help="Companion phone IP (shown in the Neon Companion app)")
+
     args = parser.parse_args()
     publisher = UdpIntentPublisher(args.host, args.port)
 
@@ -63,6 +76,22 @@ def main() -> None:
         if args.calibrate:
             adapter.calibrate()
             return
+    elif args.adapter == "galea-p2.0":
+        from ramms_access.adapters.galea_phase_2_0 import GaleaPhase2Adapter
+        adapter = GaleaPhase2Adapter(publisher, args.rate, args.ip, args.neon_ip)
+        if args.calibrate:
+            adapter.calibrate()
+            return
+        if not args.neon_ip:
+            p_g2.error("--neon-ip is required (except with --calibrate)")
+    elif args.adapter == "chair-p0":
+        from ramms_access.adapters.chair_phase_0 import monitor
+        monitor()
+        return
+    elif args.adapter == "neon-p0":
+        from ramms_access.adapters.neon_phase_0 import monitor
+        monitor(args.ip)
+        return
     else:  # pragma: no cover
         raise SystemExit(f"unknown adapter {args.adapter}")
 

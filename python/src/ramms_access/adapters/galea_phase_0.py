@@ -1,10 +1,13 @@
 """OpenBCI Galea — Phase 0: live signal monitor (every channel, nothing sent).
 
 Shows every row BrainFlow streams from the board, labeled from the board
-description: EMG, EOG and EEG as RMS (uV) in a band suited to each signal,
-the remaining rows (aux, package number, timestamp, marker) as their latest
-raw value. Use it to check fit and contact before calibrating phase 1: a
-relaxed channel should sit low and steady, a gesture should make it jump.
+description, in two side-by-side tables:
+  left:  default preset (250 Hz) — EMG, EOG and EEG as RMS (uV) in a band
+         suited to each signal; package number, timestamp, marker raw.
+  right: auxiliary preset (50 Hz) — EDA, PPG, temperature, battery, accel,
+         gyro, magnetometer, etc. as their latest raw value.
+Use it to check fit and contact before calibrating phase 1: a relaxed
+channel should sit low and steady, a gesture should make it jump.
 
 Usage:
   ramms-access galea-p0 --ip 192.168.0.6
@@ -16,8 +19,9 @@ from __future__ import annotations
 
 import os
 import time
+from itertools import zip_longest
 import numpy as np
-from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
+from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams, BrainFlowPresets
 from brainflow.data_filter import DataFilter, DetrendOperations, FilterTypes
 
 BUFFER_S = 2.0      # filtered history (long enough for the 0.5 Hz EOG band to settle)
@@ -32,7 +36,8 @@ EXG = [
 ]
 # Everything else is shown as its latest raw value.
 RAW = [
-    ("accel_channels", "accel"), ("gyro_channels", "gyro"), ("ppg_channels", "ppg"),
+    ("accel_channels", "accel"), ("gyro_channels", "gyro"),
+    ("magnetometer_channels", "mag"), ("ppg_channels", "ppg"),
     ("eda_channels", "eda"), ("temperature_channels", "temp"), ("battery_channel", "battery"),
     ("other_channels", "other"), ("package_num_channel", "package"),
     ("timestamp_channel", "timestamp"), ("marker_channel", "marker"),
@@ -91,10 +96,13 @@ def monitor(ip: str = "") -> None:
     fs = descr["sampling_rate"]
     table = channel_table(descr)
     buf_n, win_n = int(BUFFER_S * fs), int(WINDOW_S * fs)
+    aux_preset = BrainFlowPresets.AUXILIARY_PRESET
+    aux_descr = BoardShim.get_board_descr(board_id, aux_preset)
+    aux_table = channel_table(aux_descr)
 
     os.system("")
-    header = (f"[galea-p0] {descr.get('name', 'board')} @ {fs} Hz — signals: RMS uV over the "
-              f"last {WINDOW_S}s in the band shown; others: latest value. Ctrl-C to quit.")
+    header = (f"[galea-p0] {descr.get('name', 'board')} — signals: RMS uV over the last "
+              f"{WINDOW_S}s in the band shown; others: latest value. Ctrl-C to quit.")
     print(header)
     drawn = 0
     try:
@@ -104,14 +112,26 @@ def monitor(ip: str = "") -> None:
                 print(f"\r[galea-p0] filling buffer {data.shape[1]}/{buf_n} samples", end="", flush=True)
                 time.sleep(REFRESH_S)
                 continue
-            lines = [f"{'row':>4}  {'type':<9} {'name':<10} {'value':>12}  band"]
+            aux = board.get_current_board_data(1, aux_preset)
+
+            left = [f"default preset @ {fs} Hz",
+                    f"{'row':>4}  {'type':<9} {'name':<10} {'value':>12}  band"]
             for row, kind, name, band in table:
                 if band is not None:
                     value = f"{band_rms(data[row], fs, band, win_n):12.1f}"
                     note = f"{band[0]:g}-{band[1]:g} Hz"
                 else:
                     value, note = f"{data[row, -1]:12.3f}", ""
-                lines.append(f"{row:>4}  {kind:<9} {name:<10} {value}  {note}")
+                left.append(f"{row:>4}  {kind:<9} {name:<10} {value}  {note}")
+
+            right = [f"auxiliary preset @ {aux_descr['sampling_rate']} Hz",
+                     f"{'row':>4}  {'type':<9} {'name':<10} {'value':>14}"]
+            for row, kind, name, _ in aux_table:
+                value = f"{aux[row, -1]:14.3f}" if aux.shape[1] else f"{'-':>14}"
+                right.append(f"{row:>4}  {kind:<9} {name:<10} {value}")
+
+            width = max(len(line) for line in left) + 4
+            lines = [f"{a:<{width}}{b}" for a, b in zip_longest(left, right, fillvalue="")]
             print(("\r\x1b[%dF" % drawn if drawn else "\r") + "\n".join(
                 line + "\x1b[K" for line in lines), flush=True)
             drawn = len(lines)

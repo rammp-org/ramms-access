@@ -11,9 +11,10 @@ dependencies = []
 
 [project.optional-dependencies]
 galea = ["brainflow>=5.10"]
+neon = ["pupil-labs-realtime-api>=1.9"]
 keyboard = ["pynput>=1.7"]
 pointer = ["pynput>=1.7"]
-all = ["brainflow>=5.10", "pynput>=1.7"]
+all = ["brainflow>=5.10", "pupil-labs-realtime-api>=1.9", "pynput>=1.7"]
 
 [project.scripts]
 ramms-access = "ramms_access.cli:main"
